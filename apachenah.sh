@@ -3,13 +3,16 @@ set -e
 
 apt update
 apt install -y apache2
+apt install -y curl
 
 systemctl enable apache2
 systemctl restart apache2
 
 cat > /var/www/html/index.html <<'EOF'
-<html>
+<!DOCTYPE html>
+<html lang="ru">
 <head>
+    <meta charset="UTF-8">
     <title>Экзамен_ФАМИЛИЯ СТУДЕНТА</title>
 </head>
 <body>
