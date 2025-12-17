@@ -36,3 +36,13 @@ iptables -A FORWARD -i ens3 -o ens4 -m state --state RELATED,ESTABLISHED -j ACCE
 iptables -A FORWARD -i ens4 -o ens3 -j ACCEPT
 iptables -A FORWARD -i ens3 -o ens5 -m state --state RELATED,ESTABLISHED -j ACCEPT
 iptables -A FORWARD -i ens5 -o ens3 -j ACCEPT
+
+#ens4                                ens5
+#auto ens3                           auto ens3
+#iface ens3 inet static              iface ens3 inet static
+#address 192.168.102.10              address 192.168.101.10
+#netmask 255.255.255.0               netmask 255.255.255.0
+#gateway 192.168.102.1               gateway 192.168.101.1
+#helpcommand
+#nano /etc/sysctl.conf -> net.ipv4.ip_forward=1
+#iptables -t nat -A POSTROUTING -o ens3 -j MASQUERADE
