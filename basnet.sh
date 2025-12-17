@@ -1,5 +1,8 @@
 #!/bin/bash
 
+apt update -y
+apt install -y iptables iproute2
+
 cat > /etc/network/interfaces <<EOF
 # loopback
 auto lo
@@ -21,7 +24,9 @@ EOF
 
 systemctl restart networking
 
-echo 1 > /proc/sys/net/ipv4/ip_forward
+sed -i 's/^#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/' /etc/sysctl.conf
+grep -q "net.ipv4.ip_forward=1" /etc/sysctl.conf || echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+sysctl -p
 
 iptables -t nat -F
 iptables -F
