@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# ens3 = WAN (NAT/Internet)
+# ens4 = LAN1 192.168.102.0/24
+# ens5 = LAN2 192.168.101.0/24
+
+apt update
+apt install -y isc-dhcp-server iptables iptables-persistent
+
 cp /etc/network/interfaces /etc/network/interfaces.bak
 cp /etc/sysctl.conf /etc/sysctl.conf.bak
 cp /etc/default/isc-dhcp-server /etc/default/isc-dhcp-server.bak 2>/dev/null || true
@@ -26,9 +33,6 @@ iface ens5 inet static
 EOF
 
 systemctl restart networking
-
-apt update
-apt install -y isc-dhcp-server iptables iptables-persistent
 
 cat > /etc/default/isc-dhcp-server <<EOF
 INTERFACESv4="ens4 ens5"
