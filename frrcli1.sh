@@ -79,3 +79,7 @@ echo "  ping -c 3 ${GRE_REMOTE_TUN_IP}"
 echo "  vtysh -c \"show ip ospf neighbor\""
 echo "  vtysh -c \"show ip route ospf\""
 echo "  ping -c 3 192.168.201.1   # после настройки client2"
+
+#Вписать на роутере перед скриптами
+#iptables -A FORWARD -s 192.168.102.0/24 -d 192.168.101.0/24 -j ACCEPT
+#iptables -A FORWARD -s 192.168.101.0/24 -d 192.168.102.0/24 -j ACCEPT
