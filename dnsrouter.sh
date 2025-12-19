@@ -89,3 +89,11 @@ ss -lunp | grep -E ':(53)\b' || true
 
 echo "[ROUTER] ГОТОВО."
 echo "Проверка (на роутере): dig @127.0.0.1 ${ZONE_NAME} SOA"
+
+#Настройки для устройств ens4 - server; ens5 - client
+# auto ens3                     auto ens3
+# iface ens3 inet static        iface ens3 inet static
+# address 192.168.10.2/24       address 192.168.20.2/24
+# gateway 192.168.10.1          gateway 192.168.20.1
+# dns-nameservers 8.8.8.8       dns-nameservers 192.168.20.1
+
