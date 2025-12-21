@@ -17,3 +17,8 @@ EOF
 
 systemctl restart chrony
 systemctl enable chrony
+
+#chronyc tracking — показывает состояние синхронизации времени на сервере
+#chronyc sources — показывает источники времени, используемые сервером
+#chronyc clients — показывает клиентов, подключавшихся к серверу времени
+#ss -lun | grep 123 — проверяет, что chrony слушает порт UDP 123
