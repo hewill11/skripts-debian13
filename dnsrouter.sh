@@ -103,3 +103,7 @@ echo "Проверка (на роутере): dig @127.0.0.1 ${ZONE_NAME} SOA"
 #dig @192.168.20.1 client.local.lab — напрямую проверяет работу DNS на роутере и пересылку запроса к DNS-серверу.
 #ping client.local.lab — итоговая проверка: DNS-разрешение имени и сетевую доступность узла по имени.
 
+#Конфиги на устройствах
+#router -> /etc/bind/named.conf.options ; /etc/bind/named.conf.local
+#dnserver -> /etc/bind/named.conf.local ; /etc/bind/db.local.lab ; /etc/bind/named.conf.options
+#dnscli -> /etc/resolv.conf
