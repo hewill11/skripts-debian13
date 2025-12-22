@@ -8,3 +8,4 @@ echo "user2:Password2" | chpasswd
 usermod -aG sudo user2
 
 su - user1
+#
