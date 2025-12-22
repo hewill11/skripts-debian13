@@ -1,3 +1,4 @@
+
 #Пакеты пинг, итп
 #wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/ptn.sh -O ptn.sh
 
@@ -6,6 +7,14 @@
 #1) Проверка рут прав id user1;2
 #2) Пароль у юзеров Password1;2
 #3) Вход в юзера su - user1;2
+Команды:
+sudo useradd -m user1
+sudo useradd -m user2
+sudo passwd user1
+sudo passwd user2
+su - user1
+su - user2
+sudo whoami
 
 #Дшспмак
 #wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/dhcpmac.sh -O dhcpmac.sh
