@@ -1,0 +1,151 @@
+#Пакеты пинг, итп
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/ptn.sh -O ptn.sh
+
+#Юзеры
+#sudo bash <(curl -s https://raw.githubusercontent.com/hewill11/skripts-debian13/main/create%20user.sh)
+#1) Проверка рут прав id user1;2
+#2) Пароль у юзеров Password1;2
+#3) Вход в юзера su - user1;2
+
+#Дшспмак
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/dhcpmac.sh -O dhcpmac.sh
+#1) Установить пакет "apt install isc-dhcp-client" на client1
+#2) Собрать итоговую схему, после установки скрипта поменять выделенный параметр на мак адрес с клиента 1
+#3) Применить скрипт
+
+#Апаченах
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/apachenah.sh -O apachenah.sh
+#1) Отредачить фамилию - 
+#nano apachemah.sh
+#2) Применить скрипт
+#cmod +x apachenah.sh
+#./apachenah.sh
+#3) Проверка в браузере - http://localhost
+
+#Скриптбаш
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/cronsk.sh -O cronsk.sh
+#1) Применить скрипт
+#chmod +x cronsk.sh
+#./cronsk.sh
+#2) УДАЛИТЬ часть автоматизации скрипта, которую должны были делать "руками"
+#nano cronsk.sh
+#delete -> crontab -l 2>/dev?null...
+#3) Команды для проверки работы скрипта
+#nano cronsk.sh - сам скрипт
+#crontab -l/-e - расписание крон
+#ls -lh /var/backups - созданные бэкапы
+#tar -tzf /var/backups/название смотреть в предедущей команде | head - содержимое конкретного бэкапа
+
+#Настройка дшсп-сервера
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/dhcpserv.sh -O dhcpserv.sh
+#1) Установить пакет "apt install isc-dhcp-client" на client1;2
+#2) Собрать итоговую схему, применить скрипт
+#3) Команды для проверки работы сервера
+#ip a
+#systemctl status isc-dhcp-server
+#cat /etc/dhcp/dhcpd.conf
+
+#Мкдиритп
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/mcmr.sh -O mcmr.sh
+#1) Просто инструкция через нано
+
+#ссш
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/sshport.sh -O sshport.ssh
+#ssh.sh - Простая настройка| sshport.sh - с портом
+#1) Скачать и запустить скрипт на сервере 
+#2) Подключится с клиента - ssh -p 2222 student@192.168.102.10
+#Команды для проверки работы
+#whoami/who - показывает кто на сервере
+#systemctl status ssh - проверка сервиса ssh
+#ss -tulpn | grep ssh - проверка, что ssh слушает нужный порт
+
+#chonyc
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/
+#chronysrv.sh  |  chronycli.sh
+#Для сервера |  Для клиента
+#Скрипт работает на базавой настройке - basnet.sh
+#1) Скачать скрипт настройки инета на роутер
+#2) Скачать и применить скрипты на сервере и клиенте
+#Команды для проверки работы (на srv)
+#chronyc tracking — показывает состояние синхронизации времени на сервере
+#chronyc sources — показывает источники времени, используемые сервером
+#chronyc clients — показывает клиентов, подключавшихся к серверу времени
+#ss -lun | grep 123 — проверяет, что chrony слушает порт UDP 123
+
+#Протокол динамической конфигурации бля
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/dhcp.sh -O dhcp.sh
+#1) Скачать скрипт и применить на роутере
+#2) Прописать на клиентах ens3 dhcp, убрать wer в nmtui
+
+#ДНС
+#wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/
+
+#dnsrouter.sh | dnsserver.sh | dnscli.sh
+#На роутере      На сервере       На клиенте
+#1) Скачать и применить скрипты на каждое устройство
+#2) Настройки сети для сервера и клиента лежат в dnsrouter.sh
+#Команды для проверки работы 
+#(Клиент)
+#ping -c 2 192.168.20.1 — проверяет, доступен ли роутер и работает ли сеть между клиентом и шлюзом.
+#dig client.local.lab — проверяет, может ли клиент разрешить имя через DNS, указанный в /etc/resolv.conf.
+#dig @192.168.20.1 client.local.lab — напрямую проверяет работу DNS на роутере и пересылку запроса к DNS-серверу.
+#ping client.local.lab — итоговая проверка: DNS-разрешение имени и сетевую доступность узла по имени.
+#(Сервер)
+#systemctl status bind9 — статус сервера активный
+
+#ФРР
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/
+frrcli1.sh  |frrcli2.sh 
+Клиент 1 |Клиент2
+Настройка frr и дальнейшие скрипты применяются на базе скрипта basnet.sh(настройка сети)
+1) Скачать и применить скрипты на клиенты один и два
+Команды для проверки работы
+systemctl status frr --no-pager — проверяет, что служба FRR запущена и работает корректно
+vtysh -c "show version" — проверяет доступ к интерфейсу управления FRR (vtysh)
+vtysh -c "show ip ospf interface" — показывает, на каких интерфейсах включён OSPF и какие из них пассивные
+vtysh -c "show ip ospf neighbor" — проверяет наличие и состояние OSPF-соседа (должно быть состояние FULL)
+ping -c 3 192.168.201.1 — проверяет доступность сети с client1
+ping -c 3 192.168.200.1 — проверяет доступность сети с client2
+
+#ГРЕ
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/
+gre1.sh     |gre2.sh
+Клиент 1 |Клиент2
+Настройка gre и дальнейшие скрипты применяются на базе скрипта basnet.sh(настройка сети)
+1) Применить скрипты на двух устройствах
+Команды для проверки работы скрипта
+ping 10.10.10.2; ping 10.10.10.1
+
+#Динамическая трансляции двух узлов хз
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/basnet.sh -O basnet.sh
+1) Настройка сети, усе
+
+#Системы мониторинга линукс
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/monitor.sh -O monitor.sh
+Настройка дальнейший скрипт применяются на базе скрипта basnet.sh(настройка сети)
+1) Скачать и заупстить скрипт
+2) Пропинговать 8.8.8.8 на другом пк в сети 
+3) Продемонстрировать работу программы
+
+#Имя хоста и время
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/time.sh -O time.sh
+1) В скрипте просто команды со временем
+2) Сменить имя пользователя через nmtui -> exec bash
+
+#iperf3
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/iperf3.sh -O iperf3.sh
+Настройка, дальнейший скрипт применяются на базе скрипта basnet.sh(настройка сети)
+1) Установка скрипта, все объяснение в скрипте
+
+#VLAN
+
+wget https://raw.githubusercontent.com/hewill11/skripts-debian13/main/
+routervlan1.sh; routervlan2.sh   | swtichvlan.sh
+На роутере                                       | На свитче
+1) Скачать скрипт routervlan1.sh на ротуере, применить
+2) Прописать настройки nano /etc/network/interfaces на switche (Настройка прописана в routervlan1.sh)
+3) Ребутнуть сеть на роутере - systemctl restart networking
+3) Скачать скрипт switch.sh на свитче, применить, ребутнуть устройство после применения
+4) Скачать скрипт routervlan2.sh на ротуере, применить
+5) Сделать настройки сети на cервере и клиенте (указаны в routervlan2.sh)
+Команды для проверки работы лежат в - swtichvlan.sh
