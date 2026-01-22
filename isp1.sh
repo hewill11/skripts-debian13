@@ -67,3 +67,9 @@ systemctl restart networking
 
 echo "DONE: ISP configured."
 ip -br a
+
+cat > /etc/sysctl.d/sysctl.conf <<EOF
+net.ipv4.ip_forward=1
+EOF
+
+sysctl --system
