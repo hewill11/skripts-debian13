@@ -1,0 +1,166 @@
+Этап 3. R2 + GRE-туннель + OSPF
+Что получится: R2 будет работать как «резервный/филиальный» маршрутизатор. R1 и R2 свяжутся GRE-туннелем через Net и будут обмениваться маршрутами по OSPF. Это задание 7 модуля 1.
+Адресация:
+
+R2 ens3 — DHCP от Net (уже есть)
+R2 ens4 — резерв, пока ничего
+Туннель: 10.10.0.1/30 на R1, 10.10.0.2/30 на R2
+
+WAN-адреса (172.16.x.x) в твоей лабе не нужны — у тебя Net это cloud_nat и оба роутера получают DHCP. GRE построим прямо поверх этих DHCP-адресов.
+
+1. Узнай WAN-адреса R1 и R2
+На R1:
+baship -br a show ens3
+Запиши адрес — назовём его R1_WAN.
+На R2:
+baship -br a show ens3
+Запиши адрес — назовём его R2_WAN.
+Пришли мне эти два адреса (или просто запомни — они нужны для следующего шага).
+
+2. R2 — базовая настройка (NAT + forwarding)
+Аналогично R1, но без LAN-интерфейса пока.
+bashecho "net.ipv4.ip_forward=1" > /etc/sysctl.d/99-router.conf
+sysctl --system
+bashnano /etc/nftables.conf
+#!/usr/sbin/nft -f
+flush ruleset
+
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "ens3" masquerade
+    }
+}
+bashsystemctl enable --now nftables
+systemctl restart nftables
+nft list ruleset
+Должно быть: masquerade на ens3.
+
+3. Проверь, что R1 и R2 видят друг друга через Net
+На R1 (подставь R2_WAN):
+bashping -c 2 <R2_WAN>
+На R2 (подставь R1_WAN):
+bashping -c 2 <R1_WAN>
+Если пингуется — отлично, GRE поднимется. Если нет — пиши, разберём (скорее всего cloud_nat изолирует ВМ друг от друга).
+
+4. GRE-туннель — на R1
+bashnano /etc/network/interfaces
+В конец файла добавь (подставь <R2_WAN> — IP R2 на ens3):
+auto tun1
+iface tun1 inet static
+    address 10.10.0.1/30
+    pre-up ip tunnel add tun1 mode gre local <R1_WAN> remote <R2_WAN> ttl 64
+    post-down ip tunnel del tun1
+Сохрани. Подними туннель:
+bashifup tun1
+ip a show tun1
+Должно быть: интерфейс tun1 с адресом 10.10.0.1/30, статус UNKNOWN (это норма для туннелей).
+
+5. GRE-туннель — на R2
+bashnano /etc/network/interfaces
+В конец добавь (подставь <R1_WAN>):
+auto tun1
+iface tun1 inet static
+    address 10.10.0.2/30
+    pre-up ip tunnel add tun1 mode gre local <R2_WAN> remote <R1_WAN> ttl 64
+    post-down ip tunnel del tun1
+bashifup tun1
+ip a show tun1
+
+6. Проверка туннеля
+С R1:
+bashping -c 2 10.10.0.2
+С R2:
+bashping -c 2 10.10.0.1
+Должно работать. Если нет — скорее всего firewall/Net блокирует GRE (protocol 47). Скажи, перейдём на IP-in-IP или OpenVPN.
+
+7. OSPF (FRR) — на R1
+bashnano /etc/frr/daemons
+Найди строку ospfd=no и замени на:
+ospfd=yes
+Сохрани. Перезапусти FRR:
+bashsystemctl restart frr
+Заходим в FRR-консоль:
+bashvtysh
+Вводим по строкам:
+configure terminal
+router ospf
+ ospf router-id 1.1.1.1
+ network 192.168.0.0/24 area 0
+ network 10.10.0.0/30 area 0
+ passive-interface default
+ no passive-interface tun1
+exit
+interface tun1
+ ip ospf authentication
+ ip ospf authentication-key password
+exit
+exit
+write memory
+exit
+
+8. OSPF (FRR) — на R2
+bashnano /etc/frr/daemons
+ospfd=yes
+bashsystemctl restart frr
+vtysh
+configure terminal
+router ospf
+ ospf router-id 2.2.2.2
+ network 10.10.0.0/30 area 0
+ passive-interface default
+ no passive-interface tun1
+exit
+interface tun1
+ ip ospf authentication
+ ip ospf authentication-key password
+exit
+exit
+write memory
+exit
+
+9. Проверка OSPF
+На R1:
+bashvtysh -c "show ip ospf neighbor"
+Должно быть: в выводе видно соседа 2.2.2.2 в состоянии Full.
+bashvtysh -c "show ip route ospf"
+(сейчас может быть пусто, потому что у R2 ещё нет своих LAN-сетей — это нормально).
+На R2:
+bashvtysh -c "show ip ospf neighbor"
+Должен быть сосед 1.1.1.1 в состоянии Full.
+bashvtysh -c "show ip route ospf"
+Должно быть: маршрут на 192.168.0.0/24 через 10.10.0.1.
+
+10. Финальная проверка
+С R2:
+bashping -c 2 192.168.0.10
+Должно работать — пинг идёт через GRE на R1 → SERVER.
+
+Что написать в отчёт
+
+Настройка GRE-туннеля и динамической маршрутизации OSPF
+Между маршрутизаторами R1 и R2 настроен GRE-туннель через внешнюю сеть Net. Туннельные интерфейсы tun1 получили адреса из подсети 10.10.0.0/30: R1 — 10.10.0.1/30, R2 — 10.10.0.2/30. Настройка выполнена через файл /etc/network/interfaces с использованием команды ip tunnel add.
+Для обмена маршрутами между офисами настроен протокол динамической маршрутизации OSPF на базе FRR. Router-id для R1 — 1.1.1.1, для R2 — 2.2.2.2. Протокол OSPF разрешён только на интерфейсе туннеля tun1 (passive-interface default + no passive-interface tun1), что соответствует требованию задания «маршрутизаторы должны делиться маршрутами только друг с другом». Защита протокола обеспечивается парольной аутентификацией на интерфейсе tun1.
+Установление соседства подтверждено командой show ip ospf neighbor — соседи переходят в состояние Full. Связность между сегментами через туннель подтверждена командой ping.
+
+
+Скриншоты
+С R1:
+
+ip a show tun1 — туннель с адресом
+vtysh -c "show ip ospf neighbor" — сосед в Full
+ping -c 2 10.10.0.2 — успех
+
+С R2:
+
+ip a show tun1
+vtysh -c "show ip ospf neighbor"
+vtysh -c "show ip route ospf" — видно 192.168.0.0/24 через 10.10.0.1
+ping -c 2 192.168.0.10 — успех
+
+
+Если что-то застрянет
+
+GRE не пингуется → cloud_nat блокирует GRE-протокол. Пиши — перейдём на IPIP или OpenVPN.
+OSPF не выходит в Full, висит в Init/2-Way → проблема с аутентификацией. Проверь, что пароль одинаковый на обоих концах.
+FRR не запускается → systemctl status frr — пришли вывод.
