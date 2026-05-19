@@ -1,0 +1,229 @@
+Этап 4. VLAN на R1 + VLAN-aware bridge на S1–S41. R1 — настраиваем VLAN sub-интерфейсыНа R1 заменяем содержимое /etc/network/interfaces:bashnano /etc/network/interfacesПолностью замени на это (сохрани блок tun1, если он есть в конце — иначе GRE отвалится):auto lo
+iface lo inet loopback
+
+# WAN — в Net
+auto ens3
+iface ens3 inet dhcp
+
+# Trunk-порт к S1 (без IP, несёт все VLAN)
+auto ens4
+iface ens4 inet manual
+    up ip link set $IFACE up
+
+# VLAN 10 — Администрация
+auto ens4.10
+iface ens4.10 inet static
+    address 192.168.10.1/27
+    vlan-raw-device ens4
+
+# VLAN 20 — Разработка
+auto ens4.20
+iface ens4.20 inet static
+    address 192.168.20.1/27
+    vlan-raw-device ens4
+
+# VLAN 30 — Дизайн / 3D
+auto ens4.30
+iface ens4.30 inet static
+    address 192.168.30.1/27
+    vlan-raw-device ens4
+
+# VLAN 60 — Серверы
+auto ens4.60
+iface ens4.60 inet static
+    address 192.168.60.1/28
+    vlan-raw-device ens4
+
+# VLAN 99 — Управление
+auto ens4.99
+iface ens4.99 inet static
+    address 192.168.99.1/29
+    vlan-raw-device ens4
+
+# GRE-туннель к R2
+auto tun1
+iface tun1 inet static
+    address 10.10.0.1/30
+    pre-up ip tunnel add tun1 mode gre local 10.0.137.158 remote 10.0.137.170 ttl 64
+    post-down ip tunnel del tun1Сохрани.Ставим пакет для VLAN (если не стоит):bashapt install -y vlan
+modprobe 8021q
+echo "8021q" >> /etc/modulesПрименяем:bashsystemctl restart networking
+ip -br aДолжно быть видно: ens3 (DHCP), ens4 (UP без IP), ens4.10/.20/.30/.60/.99 с правильными адресами, tun1 с 10.10.0.1/30.2. S1 — VLAN-aware bridgeСейчас на S1 мост «глупый» (без VLAN-фильтрации). Делаем его VLAN-aware и назначаем порты:
+ens3 (к R1) — trunk, несёт VLAN 10, 20, 30, 60, 99
+ens4 (к R2) — trunk (для будущего, пока без тегов в работе)
+ens5 (к S2) — trunk: VLAN 30
+ens6 (к S3) — trunk: VLAN 20
+ens7 (к S4) — trunk: VLAN 10
+ens8 (к SERVER) — access VLAN 60
+bashnano /etc/network/interfacesПолностью замени:auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet manual
+    up ip link set $IFACE up
+
+auto ens4
+iface ens4 inet manual
+    up ip link set $IFACE up
+
+auto ens5
+iface ens5 inet manual
+    up ip link set $IFACE up
+
+auto ens6
+iface ens6 inet manual
+    up ip link set $IFACE up
+
+auto ens7
+iface ens7 inet manual
+    up ip link set $IFACE up
+
+auto ens8
+iface ens8 inet manual
+    up ip link set $IFACE up
+
+auto br0
+iface br0 inet manual
+    pre-up ip link show br0 >/dev/null 2>&1 || ip link add name br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+    up ip link set ens3 master br0
+    up ip link set ens4 master br0
+    up ip link set ens5 master br0
+    up ip link set ens6 master br0
+    up ip link set ens7 master br0
+    up ip link set ens8 master br0
+    up ip link set br0 up
+    # Trunk к R1 (ens3) — пропускаем все VLAN тегированно
+    up bridge vlan del dev ens3 vid 1 self
+    up bridge vlan add dev ens3 vid 10 tagged master
+    up bridge vlan add dev ens3 vid 20 tagged master
+    up bridge vlan add dev ens3 vid 30 tagged master
+    up bridge vlan add dev ens3 vid 60 tagged master
+    up bridge vlan add dev ens3 vid 99 tagged master
+    # Trunk к R2 (ens4) — на будущее
+    up bridge vlan del dev ens4 vid 1 self
+    up bridge vlan add dev ens4 vid 10 tagged master
+    up bridge vlan add dev ens4 vid 20 tagged master
+    up bridge vlan add dev ens4 vid 30 tagged master
+    up bridge vlan add dev ens4 vid 60 tagged master
+    up bridge vlan add dev ens4 vid 99 tagged master
+    # Trunk к S2 (ens5) — VLAN 30
+    up bridge vlan del dev ens5 vid 1 self
+    up bridge vlan add dev ens5 vid 30 tagged master
+    # Trunk к S3 (ens6) — VLAN 20
+    up bridge vlan del dev ens6 vid 1 self
+    up bridge vlan add dev ens6 vid 20 tagged master
+    # Trunk к S4 (ens7) — VLAN 10
+    up bridge vlan del dev ens7 vid 1 self
+    up bridge vlan add dev ens7 vid 10 tagged master
+    # Access к SERVER (ens8) — VLAN 60 без тега
+    up bridge vlan del dev ens8 vid 1 self
+    up bridge vlan add dev ens8 vid 60 pvid untagged masterСохрани.baship link delete br0 2>/dev/null
+systemctl restart networking
+echo "Exit: $?"
+bridge vlan showДолжно быть Exit: 0, и в bridge vlan show видно правильные VLAN-теги на каждом порту.3. S2, S3, S4 — VLAN-aware bridgeВсе три почти одинаковые, отличается только номер VLAN.S2 (VLAN 30 — Дизайн)bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet manual
+    up ip link set $IFACE up
+
+auto ens4
+iface ens4 inet manual
+    up ip link set $IFACE up
+
+auto br0
+iface br0 inet manual
+    pre-up ip link show br0 >/dev/null 2>&1 || ip link add name br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+    up ip link set ens3 master br0
+    up ip link set ens4 master br0
+    up ip link set br0 up
+    # Trunk к S1 (ens3) — VLAN 30 тегированно
+    up bridge vlan del dev ens3 vid 1 self
+    up bridge vlan add dev ens3 vid 30 tagged master
+    # Access к D/3D (ens4) — VLAN 30 без тега
+    up bridge vlan del dev ens4 vid 1 self
+    up bridge vlan add dev ens4 vid 30 pvid untagged masterbaship link delete br0 2>/dev/null
+systemctl restart networking
+bridge vlan showS3 (VLAN 20 — Разработка)То же самое, но замени везде 30 на 20:bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet manual
+    up ip link set $IFACE up
+
+auto ens4
+iface ens4 inet manual
+    up ip link set $IFACE up
+
+auto br0
+iface br0 inet manual
+    pre-up ip link show br0 >/dev/null 2>&1 || ip link add name br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+    up ip link set ens3 master br0
+    up ip link set ens4 master br0
+    up ip link set br0 up
+    up bridge vlan del dev ens3 vid 1 self
+    up bridge vlan add dev ens3 vid 20 tagged master
+    up bridge vlan del dev ens4 vid 1 self
+    up bridge vlan add dev ens4 vid 20 pvid untagged masterbaship link delete br0 2>/dev/null
+systemctl restart networking
+bridge vlan showS4 (VLAN 10 — Администрация)То же, но с 10:bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet manual
+    up ip link set $IFACE up
+
+auto ens4
+iface ens4 inet manual
+    up ip link set $IFACE up
+
+auto br0
+iface br0 inet manual
+    pre-up ip link show br0 >/dev/null 2>&1 || ip link add name br0 type bridge vlan_filtering 1 vlan_default_pvid 0
+    up ip link set ens3 master br0
+    up ip link set ens4 master br0
+    up ip link set br0 up
+    up bridge vlan del dev ens3 vid 1 self
+    up bridge vlan add dev ens3 vid 10 tagged master
+    up bridge vlan del dev ens4 vid 1 self
+    up bridge vlan add dev ens4 vid 10 pvid untagged masterbaship link delete br0 2>/dev/null
+systemctl restart networking
+bridge vlan show4. Клиенты — новые адресаSERVER (VLAN 60)bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet static
+    address 192.168.60.2/28
+    gateway 192.168.60.1bashsystemctl restart networking
+ip a show ens3
+ping -c 2 192.168.60.1
+ping -c 2 ya.ruADMINS (VLAN 10)bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet static
+    address 192.168.10.2/27
+    gateway 192.168.10.1bashsystemctl restart networking
+ping -c 2 192.168.10.1
+ping -c 2 ya.ruDEV (VLAN 20)bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet static
+    address 192.168.20.2/27
+    gateway 192.168.20.1bashsystemctl restart networking
+ping -c 2 192.168.20.1
+ping -c 2 ya.ruD/3D (VLAN 30)bashnano /etc/network/interfacesauto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet static
+    address 192.168.30.2/27
+    gateway 192.168.30.1bashsystemctl restart networking
+ping -c 2 192.168.30.1
+ping -c 2 ya.ru5. Финальная проверкаС R1:bashping -c 2 192.168.10.2
+ping -c 2 192.168.20.2
+ping -c 2 192.168.30.2
+ping -c 2 192.168.60.2Все 4 должны пинговаться.С ADMINS:bashping -c 2 192.168.60.2     # SERVER
+ping -c 2 192.168.20.2     # DEV
+ping -c 2 ya.ru            # внешкаВсе должны работать (между VLAN'ами трафик ходит через R1).
