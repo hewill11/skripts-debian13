@@ -1,0 +1,135 @@
+1. SERVER — DNS через dnsmasq
+bashnano /etc/dnsmasq.conf
+В конец файла добавь:
+# Слушаем на всех интерфейсах кроме loopback
+interface=ens3.60
+bind-interfaces
+
+# Не использовать /etc/resolv.conf для forwarders
+no-resolv
+
+# Внешние DNS (форвардеры)
+server=77.88.8.8
+server=8.8.8.8
+
+# Локальный домен
+domain=au-team.irpo
+local=/au-team.irpo/
+expand-hosts
+
+# Кэш
+cache-size=1000
+Сохрани.
+Заполняем /etc/hosts — это база записей DNS:
+bashnano /etc/hosts
+Должно стать примерно так (старые строки можно оставить, добавь снизу):
+127.0.0.1       localhost
+127.0.1.1       server.au-team.irpo server
+
+192.168.60.2    server.au-team.irpo server
+192.168.10.1    r1.au-team.irpo r1
+192.168.10.2    admins.au-team.irpo admins
+192.168.20.2    dev.au-team.irpo dev
+192.168.30.2    d3d.au-team.irpo d3d
+10.0.137.170    r2.au-team.irpo r2
+Сохрани.
+Перенаправь резолвер сервера на самого себя:
+bashnano /etc/resolv.conf
+nameserver 127.0.0.1
+search au-team.irpo
+Сохрани.
+Запускаем dnsmasq:
+bashsystemctl enable --now dnsmasq
+systemctl restart dnsmasq
+systemctl status dnsmasq --no-pager | head -10
+Должно быть active (running). Если ошибка — скорее всего конфликт с systemd-resolved. Тогда:
+bashsystemctl stop systemd-resolved
+systemctl disable systemd-resolved
+systemctl restart dnsmasq
+Проверка:
+bashnslookup r1.au-team.irpo 127.0.0.1
+nslookup ya.ru 127.0.0.1
+Обе должны работать.
+
+2. R1 — DHCP-сервер для VLAN 10
+Конфигурируем интерфейс, на котором слушать DHCP:
+bashnano /etc/default/isc-dhcp-server
+Найди строку INTERFACESv4="" и поменяй на:
+INTERFACESv4="ens4.10"
+Сохрани.
+Теперь основной конфиг:
+bashnano /etc/dhcp/dhcpd.conf
+Замени всё содержимое (или скрой существующее и добавь снизу):
+default-lease-time 600;
+max-lease-time 7200;
+ddns-update-style none;
+authoritative;
+
+option domain-name "au-team.irpo";
+option domain-name-servers 192.168.60.2;
+
+subnet 192.168.10.0 netmask 255.255.255.224 {
+    range 192.168.10.2 192.168.10.30;
+    option routers 192.168.10.1;
+}
+Сохрани.
+Запускаем DHCP:
+bashsystemctl enable --now isc-dhcp-server
+systemctl restart isc-dhcp-server
+systemctl status isc-dhcp-server --no-pager | head -15
+Должно быть active (running).
+Если ошибка — скинь:
+bashjournalctl -xeu isc-dhcp-server --no-pager | tail -20
+
+3. ADMINS — переключаем на DHCP
+bashnano /etc/network/interfaces
+Полностью замени на:
+source /etc/network/interfaces.d/*
+
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet manual
+    up ip link set ens3 up
+
+auto ens3.10
+iface ens3.10 inet dhcp
+    pre-up ip link show ens3.10 >/dev/null 2>&1 || ip link add link ens3 name ens3.10 type vlan id 10
+    post-down ip link delete ens3.10 2>/dev/null || true
+Сохрани.
+baship link delete ens3.10 2>/dev/null
+systemctl restart networking
+ip -br a
+cat /etc/resolv.conf
+Должно быть: ens3.10 получил IP в диапазоне 192.168.10.2-192.168.10.30, в resolv.conf — nameserver 192.168.60.2 и search au-team.irpo.
+Проверка DNS с ADMINS:
+bashping -c 2 server.au-team.irpo
+ping -c 2 r1.au-team.irpo
+ping -c 2 ya.ru
+Все три должны работать по именам.
+
+Что написать в отчёт
+
+Настройка протокола DHCP
+На маршрутизаторе R1 настроен DHCP-сервер isc-dhcp-server для подсети VLAN 10 (Администрация, 192.168.10.0/27). Сервер выдаёт адреса в диапазоне 192.168.10.2 — 192.168.10.30, в качестве шлюза по умолчанию указывается адрес R1 (192.168.10.1), в качестве DNS-сервера — адрес SERVER (192.168.60.2), DNS-суффикс — au-team.irpo. Адрес маршрутизатора 192.168.10.1 исключён из выдачи (находится вне диапазона range). Клиент ADMINS получает адресацию по DHCP, что подтверждено выводом команды ip a и содержимым /etc/resolv.conf.
+Настройка инфраструктуры разрешения доменных имён
+На сервере SERVER развёрнут DNS-сервер на базе dnsmasq. Сервер обеспечивает прямое и обратное разрешение имён устройств предприятия (r1.au-team.irpo, server.au-team.irpo, admins.au-team.irpo и др.) в соответствии с таблицей соответствия имён и IP-адресов. В качестве серверов пересылки используются публичные DNS Яндекса (77.88.8.8) и Google (8.8.8.8). База локальных записей хранится в файле /etc/hosts, что в сочетании с параметром expand-hosts обеспечивает автоматическое распространение имён в DNS-зоне au-team.irpo.
+
+
+Скриншоты
+С R1:
+
+systemctl status isc-dhcp-server --no-pager | head -10 — running.
+cat /etc/dhcp/dhcpd.conf | tail -15 — конфиг подсети.
+
+С SERVER:
+
+systemctl status dnsmasq --no-pager | head -10 — running.
+nslookup r1.au-team.irpo 127.0.0.1 — выдал IP.
+
+С ADMINS:
+
+ip a show ens3.10 — DHCP-адрес.
+cat /etc/resolv.conf — nameserver 192.168.60.2.
+ping -c 2 server.au-team.irpo — работает по имени.
