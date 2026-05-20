@@ -1,0 +1,63 @@
+Этап 12. Ansible на SERVER
+Задание 5 модуля 2.
+Что будет: на SERVER (играет роль BR-SRV из гайда) поднимем Ansible-контроллер. Все управляемые узлы (R1, R2, ADMINS) должны без ошибок отвечать на ansible all -m ping.
+
+1. SERVER — конфигурируем Ansible
+Проверь, что установлен:
+bashansible --version
+Если нет — apt install -y ansible sshpass.
+Создаём конфиг:
+bashmkdir -p /etc/ansible
+nano /etc/ansible/ansible.cfg
+[defaults]
+inventory = /etc/ansible/hosts
+host_key_checking = False
+Сохрани.
+Создаём инвентарь:
+bashnano /etc/ansible/hosts
+[routers]
+r1 ansible_host=192.168.10.1 ansible_user=net_admin ansible_password=P@ssw0rd
+r2 ansible_host=10.10.0.2 ansible_user=net_admin ansible_password=P@ssw0rd
+
+[clients]
+admins ansible_host=192.168.10.2 ansible_user=sshuser ansible_password=P@ssw0rd
+
+[all:vars]
+ansible_connection=ssh
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+Сохрани.
+Важный момент: на ADMINS нужно создать локального пользователя sshuser (потому что доменные пользователи hquser1-5 не имеют sudo, а локальные SSH к ADMINS — отдельная история). Сделаем это в шаге 3.
+
+2. SERVER, R1, R2 — убедимся что SSH-сервер установлен
+На R1:
+bashapt install -y openssh-server
+systemctl enable --now ssh
+systemctl status ssh --no-pager | head -3
+На R2:
+bashapt install -y openssh-server
+systemctl enable --now ssh
+systemctl status ssh --no-pager | head -3
+
+3. ADMINS — создаём локального sshuser и SSH-сервер
+bashapt install -y openssh-server
+systemctl enable --now ssh
+useradd -m -s /bin/bash sshuser
+echo "sshuser:P@ssw0rd" | chpasswd
+usermod -aG sudo sshuser
+Проверь:
+bashid sshuser
+
+4. SERVER — проверяем подключение Ansible
+bashansible all -m ping
+Должно вернуть для всех трёх хостов:
+r1 | SUCCESS => { ... "ping": "pong" ... }
+r2 | SUCCESS => { ... "ping": "pong" ... }
+admins | SUCCESS => { ... "ping": "pong" ... }
+
+Если что-то падает
+ssh: connect to host ... port 22: Connection refused — ssh-сервер не запущен на этом узле. Проверь systemctl status ssh там.
+Permission denied (publickey,password) — неверный пароль. Проверь, что на R1/R2 пользователь net_admin и пароль P@ssw0rd, на ADMINS пользователь sshuser и пароль P@ssw0rd.
+sshpass not installed — на SERVER apt install -y sshpass.
+ssh-keygen ... No such file or directory при первом подключении — создай каталог: mkdir -p /root/.ssh && chmod 700 /root/.ssh.
+Долго висит, потом таймаут — нет связности по сети с конкретным хостом. Проверь ping с SERVER до этого IP.
