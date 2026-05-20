@@ -1,0 +1,161 @@
+Этап 11. Docker + веб-приложение в контейнерах
+Задание 6 модуля 2.
+Что будет: на SERVER развернём docker-стек из 2 контейнеров — testapp (веб) и db (MariaDB). Приложение будет доступно на порту 8080.
+Адаптация: в гайде используются образы site_latest и mariadb_latest из Additional.iso. У тебя их нет — возьмём публичные образы с Docker Hub: php:8.2-apache и mariadb:latest. Функционал тот же.
+
+1. SERVER — проверяем Docker
+bashsystemctl status docker --no-pager | head -5
+Если не active — запускаем:
+bashsystemctl enable --now docker
+Проверь:
+bashdocker --version
+docker-compose --version
+Должны выводить версии.
+
+2. SERVER — создаём проект testapp
+bashmkdir -p /root/testapp
+cd /root/testapp
+Создаём index.php для testapp
+bashnano /root/testapp/index.php
+php<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>TestApp — Docker контейнер</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+        h1 { color: #2c3e50; }
+        .badge { background: #2ecc71; color: white; padding: 5px 12px; border-radius: 4px; display: inline-block; }
+        .info { background: #ecf0f1; padding: 15px; border-left: 4px solid #2ecc71; margin: 20px 0; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        th { background: #2ecc71; color: white; }
+    </style>
+</head>
+<body>
+    <h1>TestApp <span class="badge">Docker</span></h1>
+    <div class="info">
+        <strong>Контейнер:</strong> testapp<br>
+        <strong>База данных:</strong> db (MariaDB)<br>
+        <strong>Порт приложения:</strong> 8080
+    </div>
+
+    <h2>Данные из контейнера db</h2>
+    <?php
+        $tries = 0;
+        $mysqli = null;
+        while ($tries < 10) {
+            $mysqli = @new mysqli("db", "test", "P@ssw0rd", "testdb");
+            if (!$mysqli->connect_error) break;
+            sleep(2);
+            $tries++;
+        }
+        if ($mysqli->connect_error) {
+            die("Не удалось подключиться к БД: " . $mysqli->connect_error);
+        }
+        $mysqli->query("CREATE TABLE IF NOT EXISTS departments (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50))");
+        $check = $mysqli->query("SELECT COUNT(*) AS c FROM departments")->fetch_assoc();
+        if ($check['c'] == 0) {
+            $mysqli->query("INSERT INTO departments (name) VALUES ('Разработка'), ('Дизайн / 3D'), ('Администрация'), ('Серверы')");
+        }
+        $result = $mysqli->query("SELECT * FROM departments");
+        echo "<table><tr><th>ID</th><th>Отдел</th></tr>";
+        while ($row = $result->fetch_assoc()) {
+            echo "<tr><td>{$row['id']}</td><td>{$row['name']}</td></tr>";
+        }
+        echo "</table>";
+        $mysqli->close();
+    ?>
+</body>
+</html>
+Сохрани.
+Создаём Dockerfile для testapp
+bashnano /root/testapp/Dockerfile
+FROM php:8.2-apache
+RUN docker-php-ext-install mysqli
+COPY index.php /var/www/html/
+EXPOSE 80
+Сохрани.
+Создаём docker-compose.yaml
+bashnano /root/testapp/docker-compose.yaml
+yamlversion: '3'
+services:
+  testapp:
+    build: .
+    container_name: testapp
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+    restart: always
+
+  db:
+    image: mariadb:latest
+    container_name: db
+    environment:
+      MARIADB_ROOT_PASSWORD: rootP@ssw0rd
+      MARIADB_DATABASE: testdb
+      MARIADB_USER: test
+      MARIADB_PASSWORD: P@ssw0rd
+    restart: always
+Сохрани.
+
+3. Запускаем стек
+bashcd /root/testapp
+docker-compose up -d
+Скачивание образов займёт 2-3 минуты (php, mariadb). После сборки:
+bashdocker ps
+Должно быть видны два контейнера: testapp и db, оба в статусе Up.
+Логи на случай проблем:
+bashdocker-compose logs --tail=20
+
+4. Проверка
+Локально с SERVER:
+bashcurl -I http://localhost:8080
+Должно быть HTTP/1.1 200 OK.
+bashcurl -s http://localhost:8080 | head -30
+Должна вернуться страница с зелёным "Docker" и таблицей отделов.
+С ADMINS:
+bashcurl -I http://192.168.60.2:8080
+Тоже 200.
+С R1 — теперь docker.au-team.irpo будет работать через reverse proxy (порт 8080):
+bashcurl http://docker.au-team.irpo
+Должна вернуться testapp страница.
+
+Если что-то падает
+docker-compose up падает с "permission denied":
+bashchmod o+r /root/testapp/Dockerfile /root/testapp/index.php
+Контейнер db падает в логах с "Access denied":
+
+Сбрось volume и пересоздай: docker-compose down -v && docker-compose up -d.
+
+testapp стартует, но страница пишет "Не удалось подключиться":
+
+Дай контейнерам ещё минуту на старт MariaDB.
+Проверь логи docker logs db --tail=20.
+
+Нет интернета на SERVER для скачивания образов:
+bashping -c 2 deb.debian.org
+Если нет — проверь маршруты на R1.
+
+Скриншоты
+С SERVER:
+
+docker ps — оба контейнера Up.
+curl -I http://localhost:8080 — 200.
+Опционально: скрин страницы в браузере.
+
+С ADMINS:
+
+Скрин браузера с http://docker.au-team.irpo — видна testapp страница.
+
+
+Что написать в отчёт
+
+Развёртывание веб-приложения в Docker
+На сервере SERVER развёрнут стек контейнеров Docker, состоящий из двух сервисов: testapp (веб-приложение на базе PHP/Apache) и db (СУБД MariaDB). Конфигурация стека описана в файле docker-compose.yaml, контейнер testapp собирается из локального Dockerfile с базовым образом php:8.2-apache, контейнер db использует официальный образ mariadb:latest.
+Веб-приложение testapp обращается к базе данных testdb на контейнере db от имени пользователя test с паролем P@ssw0rd, что соответствует требованиям задания. Внешний доступ к приложению обеспечивается публикацией порта 8080 хоста на порт 80 контейнера testapp. Доступ к приложению извне реализован через обратный прокси nginx на маршрутизаторе R1 по доменному имени docker.au-team.irpo, а также через статическую трансляцию портов на R1 (8080 → 192.168.60.2:8080).
+
+
+Когда docker ps покажет оба контейнера Up и страница http://docker.au-team.irpo отрисуется через nginx — пиши «этап 11 готов».
+Дальше — Ansible (этап 12) и Yandex Browser (этап 13). Финиш близко.
