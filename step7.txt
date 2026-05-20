@@ -1,0 +1,93 @@
+Блок 2. Chrony — NTP
+В гайде модуля 2 NTP-сервер на ISP. У нас роль ISP = R1, поэтому R1 будет NTP-сервером, а все остальные — клиентами.
+R1 — настраиваем как NTP-сервер (stratum 5)
+bashnano /etc/chrony/chrony.conf
+Найди строку pool 2.debian.pool.ntp.org iburst (или похожую с pool) и закомментируй её — поставь # в начало.
+В конец файла добавь:
+server ntp1.vniiftri.ru iburst prefer
+local stratum 5
+allow 192.168.0.0/16
+allow 10.10.0.0/30
+Сохрани.
+bashsystemctl restart chronyd
+systemctl status chronyd --no-pager | head -5
+chronyc sources
+Должно быть active (running), и в chronyc sources виден внешний сервер.
+SERVER, ADMINS, DEV, D/3D — настраиваем как NTP-клиенты к R1
+На SERVER, ADMINS, DEV, D/3D — выполняем одно и то же. У всех NTP-сервер = R1, но адрес шлюза свой:
+bashnano /etc/chrony/chrony.conf
+Закомментируй строку pool ... (поставь #).
+В конец добавь:
+server 192.168.10.1 iburst
+(192.168.10.1 — это R1, но R1 как раз отвечает на NTP на всех своих VLAN-интерфейсах, поэтому можно указывать любой адрес R1 — например, можно указать 192.168.60.1 для SERVER, 192.168.20.1 для DEV и т.д. Но проще для всех указать один — 192.168.10.1, или r1.au-team.irpo через DNS).
+Сохрани.
+bashsystemctl restart chronyd
+chronyc sources
+Должно быть: строка с 192.168.10.1 и через минуту-другую — ^* 192.168.10.1 (звёздочка = выбран как источник).
+R2 — тоже NTP-клиент к R1
+На R2:
+bashnano /etc/chrony/chrony.conf
+Закомментируй pool ....
+В конец добавь (R2 общается с R1 через GRE-туннель):
+server 10.10.0.1 iburst
+bashsystemctl restart chronyd
+chronyc sources
+
+Блок 3. Проброс портов на R1 и R2
+Это задание 8 модуля 2. Пробросим:
+
+На R1 порт 2026 (WAN) → 192.168.60.2:2026 (SERVER, SSH)
+На R1 порт 8080 (WAN) → 192.168.60.2:80 (SERVER, web — Apache настроим позже на этапе 8)
+На R2 порт 2026 (WAN) → 10.10.0.1 → 192.168.60.2:2026 через туннель и OSPF
+
+R1 — добавляем DNAT в nftables
+bashnano /etc/nftables.conf
+Полностью замени содержимое на:
+#!/usr/sbin/nft -f
+flush ruleset
+
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "ens3" tcp dport 2026 dnat to 192.168.60.2:2026
+        iifname "ens3" tcp dport 8080 dnat to 192.168.60.2:80
+    }
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "ens3" masquerade
+    }
+}
+Сохрани.
+bashsystemctl restart nftables
+nft list ruleset
+Должно быть: видны обе chain (prerouting с DNAT и postrouting с masquerade).
+R2 — добавляем DNAT в nftables
+bashnano /etc/nftables.conf
+#!/usr/sbin/nft -f
+flush ruleset
+
+table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        iifname "ens3" tcp dport 2026 dnat to 192.168.60.2:2026
+        iifname "ens3" tcp dport 8080 dnat to 192.168.60.2:80
+    }
+    chain postrouting {
+        type nat hook postrouting priority srcnat; policy accept;
+        oifname "ens3" masquerade
+    }
+}
+Сохрани.
+bashsystemctl restart nftables
+nft list ruleset
+
+Проверка проброса портов
+С R1 или R2 на самих себя проверить нельзя (трафик не идёт через ens3). Нужен внешний клиент. У тебя в качестве «внешки» только Net (cloud_nat). Если у тебя есть доступ к хост-машине PNetLab — оттуда можно сделать:
+ssh sshuser@<R1_WAN> -p 2026
+Если такой возможности нет — можно протестировать другим способом, через R2 → R1 WAN-адрес:
+С R2:
+bashssh sshuser@10.0.137.158 -p 2026
+Должен зайти на SERVER (через R1) и показать баннер Authorized access only.
+С R1:
+bashssh sshuser@10.0.137.170 -p 2026
+Должен зайти на SERVER (через R2). Внимание — для этого SERVER должен быть доступен с R2 через OSPF. Если на этапе 3 ты не пинговал 192.168.60.2 с R2 — проверь ещё раз.
