@@ -1,0 +1,125 @@
+Создаём конфиг сайта:
+bashnano /etc/nginx/sites-available/proxy
+server {
+    listen 80;
+    server_name web.au-team.irpo;
+
+    auth_basic "Restricted Access";
+    auth_basic_user_file /etc/nginx/.htpasswd;
+
+    location / {
+        proxy_pass http://192.168.60.2:80/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+
+server {
+    listen 80;
+    server_name docker.au-team.irpo;
+
+    location / {
+        proxy_pass http://192.168.60.2:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+}
+Сохрани.
+Активируем конфиг и убираем дефолтный:
+bashln -sf /etc/nginx/sites-available/proxy /etc/nginx/sites-enabled/proxy
+rm -f /etc/nginx/sites-enabled/default
+В главном конфиге nginx раскомментируй server_names_hash_bucket_size:
+bashnano /etc/nginx/nginx.conf
+Найди закомментированную строку:
+# server_names_hash_bucket_size 64;
+Убери #, должно стать:
+server_names_hash_bucket_size 64;
+Сохрани.
+2. R1 — создаём файл паролей для Basic Auth
+bashhtpasswd -bc /etc/nginx/.htpasswd WEB P@ssw0rd
+cat /etc/nginx/.htpasswd
+Должно показать строку вида WEB:$apr1$... (хеш пароля).
+Если htpasswd не найден:
+bashapt install -y apache2-utils
+htpasswd -bc /etc/nginx/.htpasswd WEB P@ssw0rd
+3. R1 — проверяем и запускаем
+bashnginx -t
+Должно быть syntax is ok и test is successful.
+bashsystemctl enable --now nginx
+systemctl restart nginx
+systemctl status nginx --no-pager | head -5
+active (running).
+
+4. Добавляем DNS-записи на SERVER
+Нужно, чтобы web.au-team.irpo и docker.au-team.irpo резолвились в IP R1.
+На SERVER:
+bashnano /etc/hosts
+Добавь две строки:
+192.168.10.1    web.au-team.irpo
+192.168.10.1    docker.au-team.irpo
+(R1 доступен по адресу VLAN-шлюза — 192.168.10.1, например, или 192.168.60.1. Можно использовать любой — клиенты идут через свои шлюзы.)
+Сохрани.
+bashsystemctl restart dnsmasq
+Проверка с ADMINS:
+bashnslookup web.au-team.irpo
+ping -c 2 web.au-team.irpo
+Должно резолвиться в 192.168.10.1.
+
+5. Проверка работы
+С ADMINS:
+bashcurl -I http://web.au-team.irpo
+Должно вернуть HTTP/1.1 401 Unauthorized и заголовок WWW-Authenticate: Basic realm="Restricted Access" — это значит, Basic Auth работает (Nginx требует пароль).
+Теперь с авторизацией:
+bashcurl -u WEB:P@ssw0rd http://web.au-team.irpo | head -20
+Должна вернуться HTML-страница — это значит, и Basic Auth, и проксирование работают.
+Также проверь docker.au-team.irpo (пока он проксирует на 8080 — там пока ничего нет, должна быть 502 Bad Gateway или 504):
+bashcurl -I http://docker.au-team.irpo
+Ожидается 502 или 504 — это нормально, на 8080 пока никто не слушает. После этапа 10 (Docker) там появится приложение.
+
+6. Браузерная проверка (опционально)
+Если на ADMINS установлен графический браузер — открой http://web.au-team.irpo. Браузер покажет окно ввода логина/пароля. Введи WEB / P@ssw0rd → откроется страница с таблицей из БД.
+
+Если что-то не работает
+Nginx не стартует:
+bashjournalctl -xeu nginx --no-pager | tail -20
+curl возвращает «could not resolve host»:
+
+DNS не резолвит. Проверь /etc/resolv.conf на ADMINS (должен быть nameserver 192.168.60.2).
+Записи в /etc/hosts на SERVER добавлены, dnsmasq перезапущен.
+
+401 Unauthorized даже с правильным паролем:
+
+Проверь .htpasswd: cat /etc/nginx/.htpasswd — должна быть одна строка.
+Возможно, формат хэша не подходит. Пересоздай: htpasswd -bc /etc/nginx/.htpasswd WEB P@ssw0rd (флаг -c создаёт новый файл).
+
+502 Bad Gateway на web.au-team.irpo:
+
+R1 не может подключиться к SERVER на порту 80. Проверь с R1: curl -I http://192.168.60.2/. Если не работает — apache на SERVER не запущен.
+
+
+Скриншоты для отчёта
+С R1:
+
+cat /etc/nginx/sites-available/proxy — конфиг.
+cat /etc/nginx/.htpasswd — есть запись WEB.
+nginx -t — successful.
+
+С ADMINS:
+
+curl -I http://web.au-team.irpo — 401.
+curl -u WEB:P@ssw0rd http://web.au-team.irpo | head -20 — HTML страницы.
+Скрин браузера с окном ввода логина (если возможно).
+
+
+Что написать в отчёт
+
+Настройка обратного прокси-сервера на маршрутизаторе R1
+На маршрутизаторе R1 развёрнут веб-сервер nginx в режиме reverse proxy. Настроены два виртуальных хоста: web.au-team.irpo и docker.au-team.irpo. Оба домена проксируются на сервер SERVER (192.168.60.2). Виртуальный хост web.au-team.irpo направляет запросы на порт 80 (веб-приложение Apache), docker.au-team.irpo — на порт 8080 (контейнерное приложение testapp). DNS-записи для доменов настроены на сервере dnsmasq (SERVER).
+Настройка web-based аутентификации
+Для виртуального хоста web.au-team.irpo настроена базовая HTTP-аутентификация средствами nginx. Учётные данные хранятся в файле /etc/nginx/.htpasswd, созданном командой htpasswd. Доступ к сайту разрешён пользователю WEB с паролем P@ssw0rd. При успешной аутентификации клиент перенаправляется на веб-приложение Apache, в случае ошибки — возвращается HTTP-код 401 Unauthorized.
+
+
+Когда curl -u WEB:P@ssw0rd http://web.au-team.irpo вернёт HTML страницы — пиши «этап 9 готов».
+Дальше — Docker и Samba DC (этап 10), это последняя большая часть.
