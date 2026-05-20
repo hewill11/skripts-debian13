@@ -1,0 +1,57 @@
+Этап 8. Apache + MariaDB + веб-приложение на SERVERЧто будет: на SERVER развернём веб-сервер Apache, базу MariaDB, создадим БД webdb, пользователя web, простую страницу index.php. Сайт доступен по http://192.168.60.2/ изнутри и через проброс http://<R1_WAN>:8080/ извне.Важно: в гайде модуля 2 предполагается, что у тебя есть Additional.iso с готовыми dump.sql и index.php. У тебя его нет, поэтому мы создадим простую тестовую страницу и базу с нуля — это полностью соответствует требованиям задания (создать БД, импортировать данные, проверить работу).1. SERVER — настраиваем MariaDBbashsystemctl enable --now mariadb
+systemctl status mariadb --no-pager | head -5Должно быть active (running).Создаём БД, пользователя, таблицу и данные. Заходим в MariaDB:bashmysql -u rootВ консоли mysql выполняем по строкам:sqlCREATE DATABASE webdb;
+CREATE USER 'web'@'localhost' IDENTIFIED BY 'P@ssw0rd';
+GRANT ALL PRIVILEGES ON webdb.* TO 'web'@'localhost';
+FLUSH PRIVILEGES;
+USE webdb;
+CREATE TABLE info (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(50), role VARCHAR(50));
+INSERT INTO info (name, role) VALUES ('Сервер предприятия', 'Web + DB + DNS');
+INSERT INTO info (name, role) VALUES ('Отдел разработки', 'VLAN 20');
+INSERT INTO info (name, role) VALUES ('Отдел дизайна', 'VLAN 30');
+INSERT INTO info (name, role) VALUES ('Администрация', 'VLAN 10');
+SELECT * FROM info;
+EXIT;После SELECT * FROM info; должна вывестись таблица с 4 строками. Если всё ок — EXIT;.2. SERVER — создаём страницу index.phpbashnano /var/www/html/index.phpВставь:php<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Учебная практика — Сетевое и системное администрирование</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }
+        h1 { color: #2c3e50; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        th { background: #3498db; color: white; }
+        tr:nth-child(even) { background: #f4f4f4; }
+        .info { background: #ecf0f1; padding: 15px; border-left: 4px solid #3498db; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <h1>Лабораторный стенд предприятия</h1>
+    <div class="info">
+        <strong>Сервер:</strong> server.au-team.irpo (192.168.60.2)<br>
+        <strong>Сегмент:</strong> VLAN 60 — Серверы<br>
+        <strong>Стек:</strong> Apache + MariaDB + PHP
+    </div>
+
+    <h2>Информация из базы данных webdb</h2>
+    <?php
+        $mysqli = new mysqli("localhost", "web", "P@ssw0rd", "webdb");
+        if ($mysqli->connect_error) {
+            die("Ошибка подключения: " . $mysqli->connect_error);
+        }
+        $result = $mysqli->query("SELECT * FROM info");
+        echo "<table><tr><th>ID</th><th>Название</th><th>Роль</th></tr>";
+        while ($row = $result->fetch_assoc()) {
+            echo "<tr><td>{$row['id']}</td><td>{$row['name']}</td><td>{$row['role']}</td></tr>";
+        }
+        echo "</table>";
+        $mysqli->close();
+    ?>
+</body>
+</html>Сохрани.Права:bashchown -R www-data:www-data /var/www/html
+chmod -R 755 /var/www/html
+rm -f /var/www/html/index.html3. SERVER — запускаем Apachebashsystemctl enable --now apache2
+systemctl restart apache2
+systemctl status apache2 --no-pager | head -5Должно быть active (running).4. Проверка изнутри сетиС SERVER (локально):bashcurl -s http://localhost/ | head -20Должно вернуть HTML с заголовком «Лабораторный стенд предприятия».С ADMINS:bashcurl -s http://192.168.60.2/ | head -20То же самое. Если хочешь — открой в графическом браузере на ADMINS (если установлен) и зайди на http://server.au-team.irpo/ — должна загрузиться красивая страничка с таблицей.5. Проверка извне через проброс портовНа R1 у нас проброс 8080 → 192.168.60.2:80. С R2 проверь:bashcurl -s http://10.0.137.158:8080/ | head -20(10.0.137.158 — это WAN-адрес R1, подставь свой если другой)Должна вернуться та же страница — это значит, проброс работает.Если что-то не работаетcurl localhost не работает на SERVER:bashjournalctl -xeu apache2 --no-pager | tail -20
+ss -tlnp | grep :80Покажи вывод.PHP не выполняется (видишь сырой код):Проверь, что PHP-модуль для Apache установлен:bashapt install -y libapache2-mod-php php-mysqli
+systemctl restart apache2Ошибка подключения к БД на странице:bashmysql -u web -p'P@ssw0rd' -e "SELECT * FROM webdb.info;"Должно показать данные. Если нет — права не выдались, выполни ещё раз GRANT ALL ... FLUSH PRIVILEGES; в mysql -u root.
